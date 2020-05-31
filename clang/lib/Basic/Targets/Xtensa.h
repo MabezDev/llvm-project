@@ -36,9 +36,9 @@ public:
       : TargetInfo(Triple) {
     BigEndian = false;
     NoAsmVariants = true;
-    LongLongAlign = 32;
+    LongLongAlign = 64;
     SuitableAlign = 32;
-    DoubleAlign = LongDoubleAlign = 32;
+    DoubleAlign = LongDoubleAlign = 64;
     SizeType = UnsignedInt;
     PtrDiffType = SignedInt;
     IntPtrType = SignedInt;

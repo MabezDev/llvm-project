@@ -9642,10 +9642,8 @@ public:
 namespace {
 class XtensaABIInfo : public DefaultABIInfo {
 private:
-  static const int NumArgGPRs = 6;
-  static const int MAX_ARG_IN_REGS_SIZE = 4 * 32;
-  static const int MAX_ARG_DIRECT_SIZE = MAX_ARG_IN_REGS_SIZE;
-  static const int MAX_RET_IN_REGS_SIZE = 2 * 32;
+  static const int MaxNumArgGPRs = 6;
+  static const int MaxNumRetGPRs = 4;
 
 public:
   XtensaABIInfo(CodeGen::CodeGenTypes &CGT) : DefaultABIInfo(CGT) {}
@@ -9654,8 +9652,8 @@ public:
   // non-virtual, but computeInfo is virtual, so we overload it.
   void computeInfo(CGFunctionInfo &FI) const override;
 
-  ABIArgInfo classifyArgumentType(QualType Ty, bool IsFixed,
-                                  int &ArgGPRsLeft) const;
+  ABIArgInfo classifyArgumentType(QualType Ty, int &ArgGPRsLeft) const;
+
   ABIArgInfo classifyReturnType(QualType RetTy) const;
 
   Address EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
@@ -9669,31 +9667,16 @@ void XtensaABIInfo::computeInfo(CGFunctionInfo &FI) const {
   QualType RetTy = FI.getReturnType();
   if (!getCXXABI().classifyReturnType(FI))
     FI.getReturnInfo() = classifyReturnType(RetTy);
-  // IsRetIndirect is true if classifyArgumentType indicated the value should
-  // be passed indirect or if the type size is greater than 2*32.
-  // is passed direct in LLVM IR, relying on the backend lowering code to
-  // rewrite the argument list and pass indirectly on RV32.
-  bool IsRetIndirect = FI.getReturnInfo().getKind() == ABIArgInfo::Indirect ||
-                       getContext().getTypeSize(RetTy) > MAX_RET_IN_REGS_SIZE;
-  // We must track the number of GPRs used in order to conform to the Xtensa
-  // ABI, as integer scalars passed in registers should have signext/zeroext
-  // when promoted, but are anyext if passed on the stack. As GPR usage is
-  // different for variadic arguments, we must also track whether we are
-  // examining a vararg or not.
-  int ArgGPRsLeft = IsRetIndirect ? NumArgGPRs - 1 : NumArgGPRs;
-  int NumFixedArgs = FI.getNumRequiredArgs();
-  int ArgNum = 0;
+
+  int ArgGPRsLeft = MaxNumArgGPRs;
   for (auto &ArgInfo : FI.arguments()) {
-    bool IsFixed = ArgNum < NumFixedArgs;
-    ArgInfo.info = classifyArgumentType(ArgInfo.type, IsFixed, ArgGPRsLeft);
-    ArgNum++;
+    ArgInfo.info = classifyArgumentType(ArgInfo.type, ArgGPRsLeft);
   }
 }
 
-ABIArgInfo XtensaABIInfo::classifyArgumentType(QualType Ty, bool IsFixed,
+ABIArgInfo XtensaABIInfo::classifyArgumentType(QualType Ty,
                                                int &ArgGPRsLeft) const {
-  assert(ArgGPRsLeft <= NumArgGPRs && "Arg GPR tracking underflow");
-
+  assert(ArgGPRsLeft <= MaxNumArgGPRs && "Arg GPR tracking underflow");
   Ty = useFirstFieldIfTransparentUnion(Ty);
   // Structures with either a non-trivial destructor or a non-trivial
   // copy constructor are always passed indirectly.
@@ -9703,26 +9686,26 @@ ABIArgInfo XtensaABIInfo::classifyArgumentType(QualType Ty, bool IsFixed,
     return getNaturalAlignIndirect(Ty, /*ByVal=*/RAA ==
                                            CGCXXABI::RAA_DirectInMemory);
   }
+
   // Ignore empty structs/unions.
   if (isEmptyRecord(getContext(), Ty, true))
     return ABIArgInfo::getIgnore();
+
   uint64_t Size = getContext().getTypeSize(Ty);
   uint64_t NeededAlign = getContext().getTypeAlign(Ty);
   bool MustUseStack = false;
-  // Determine the number of GPRs needed to pass the current argument
-  // according to the ABI. 2*XLen-aligned varargs are passed in "aligned"
-  // register pairs, so may consume 3 registers.
-  int NeededArgGPRs = 1;
-  if (!IsFixed && NeededAlign == 2 * 32)
-    NeededArgGPRs = 2 + (ArgGPRsLeft % 2);
-  else if (Size > 32 && Size <= MAX_ARG_IN_REGS_SIZE)
-    NeededArgGPRs = (Size + 31) / 32;
-  if (NeededArgGPRs > ArgGPRsLeft) {
+  int NeededArgGPRs = (Size + 31) / 32;
+
+  if (NeededAlign == 2 * 32)
+    NeededArgGPRs += (ArgGPRsLeft % 2);
+
+  if ((NeededArgGPRs > ArgGPRsLeft) || (NeededAlign > 2 * 32)) {
     MustUseStack = true;
     NeededArgGPRs = ArgGPRsLeft;
   }
   ArgGPRsLeft -= NeededArgGPRs;
-  if (!isAggregateTypeForABI(Ty) && !Ty->isVectorType()) {
+
+  if (!isAggregateTypeForABI(Ty) && !Ty->isVectorType() && !MustUseStack) {
     // Treat an enum type as its underlying type.
     if (const EnumType *EnumTy = Ty->getAs<EnumType>())
       Ty = EnumTy->getDecl()->getIntegerType();
@@ -9731,76 +9714,127 @@ ABIArgInfo XtensaABIInfo::classifyArgumentType(QualType Ty, bool IsFixed,
     if (Size < 32 && Ty->isIntegralOrEnumerationType() && !MustUseStack) {
       return extendType(Ty);
     }
-    return ABIArgInfo::getDirect();
+    if (Size == 64)
+      return ABIArgInfo::getDirect(llvm::IntegerType::get(getVMContext(), 64));
+    return ABIArgInfo::getDirect(llvm::IntegerType::get(getVMContext(), 32));
   }
 
-  // Aggregates which are <= 4*32 will be passed in registers if possible,
+  // Aggregates which are <= 6*32 will be passed in registers if possible,
   // so coerce to integers.
-  if (Size <= MAX_ARG_IN_REGS_SIZE) {
-    unsigned Alignment = getContext().getTypeAlign(Ty);
-    // Use a single XLen int if possible, 2*XLen if 2*XLen alignment is
-    // required, and a 2-element XLen array if only XLen alignment is
-    // required.
+  if ((Size <= (MaxNumArgGPRs * 32)) && (!MustUseStack)) {
     if (Size <= 32) {
       return ABIArgInfo::getDirect(llvm::IntegerType::get(getVMContext(), 32));
-    }
-
-    else if (Alignment == 2 * 32) {
-      return ABIArgInfo::getDirect(
-          llvm::IntegerType::get(getVMContext(), 2 * 32));
     } else {
       return ABIArgInfo::getDirect(llvm::ArrayType::get(
-          llvm::IntegerType::get(getVMContext(), 32), (Size + 31) / 32));
+          llvm::IntegerType::get(getVMContext(), 32), NeededArgGPRs));
     }
   }
 #undef MAX_STRUCT_IN_REGS_SIZE
-  return getNaturalAlignIndirect(Ty, /*ByVal=*/false);
+  return getNaturalAlignIndirect(Ty, /*ByVal=*/true);
 }
 
 ABIArgInfo XtensaABIInfo::classifyReturnType(QualType RetTy) const {
   if (RetTy->isVoidType())
     return ABIArgInfo::getIgnore();
-  int ArgGPRsLeft = 2;
+  int ArgGPRsLeft = MaxNumRetGPRs;
   // The rules for return and argument types are the same, so defer to
   // classifyArgumentType.
-  return classifyArgumentType(RetTy, /*IsFixed=*/true, ArgGPRsLeft);
+  return classifyArgumentType(RetTy, ArgGPRsLeft);
 }
 
 Address XtensaABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
                                  QualType Ty) const {
-  CharUnits SlotSize = CharUnits::fromQuantity(32 / 8);
-  // Empty records are ignored for parameter passing purposes.
-  if (isEmptyRecord(getContext(), Ty, true)) {
-    // We try to return some dummy value which will be
-    // removed by backend
+  // The va_list structure memory layout:
+  // struct __va_list_tag {
+  //   int32_t *va_stk;
+  //   int32_t *va_reg;
+  //   int32_t va_ndx;
+  // };
+  CGBuilderTy &Builder = CGF.Builder;
 
-    auto TypeInfo = getContext().getTypeInfoInChars(Ty);
-    return emitVoidPtrVAArg(CGF, VAListAddr, Ty, false, TypeInfo, SlotSize,
-                            /*AllowHigherAlign=*/false);
+  Address OverflowAreaPtr = Builder.CreateStructGEP(VAListAddr, 0, "__va_stk");
+  Address OverflowArea = Address(Builder.CreateLoad(OverflowAreaPtr, ""),
+                                 CharUnits::fromQuantity(4));
+  Address RegSaveAreaPtr = Builder.CreateStructGEP(VAListAddr, 1, "__va_reg");
+  Address RegSaveArea = Address(Builder.CreateLoad(RegSaveAreaPtr, ""),
+                                CharUnits::fromQuantity(4));
+  Address ARAreaPtr = Builder.CreateStructGEP(VAListAddr, 2, "__va_ndx");
+  llvm::Value *ARIndex = Builder.CreateLoad(ARAreaPtr, "");
+
+  ARIndex = Builder.CreateLShr(ARIndex, Builder.getInt32(2));
+
+  unsigned Align = getContext().getTypeAlign(Ty) / 32;
+  unsigned Size = (getContext().getTypeSize(Ty) + 31) / 32;
+
+  if (Align > 1) {
+    ARIndex = Builder.CreateAdd(ARIndex, Builder.getInt32(Align - 1));
+    ARIndex =
+        Builder.CreateAnd(ARIndex, Builder.getInt32((uint32_t) ~(Align - 1)));
   }
 
-  std::pair<CharUnits, CharUnits> SizeAndAlign =
-      getContext().getTypeInfoInChars(Ty);
-  // Arguments bigger than MAX_STRUCT_DIRECT_SIZE indirectly.
-  CharUnits DirectSize = CharUnits::fromQuantity(MAX_ARG_DIRECT_SIZE / 8);
-  bool IsIndirect = SizeAndAlign.first > DirectSize;
+  llvm::Value *ARIndexNext = Builder.CreateAdd(ARIndex, Builder.getInt32(Size));
+  Builder.CreateStore(Builder.CreateShl(ARIndexNext, Builder.getInt32(2)),
+                      ARAreaPtr);
 
-  if (IsIndirect) {
-    auto TyInfo = CGF.getContext().getTypeInfoInChars(Ty);
-    CharUnits TyAlignForABI = TyInfo.second;
+  const unsigned OverflowLimit = 6;
+  llvm::Value *CC = Builder.CreateICmpULE(
+      ARIndexNext, Builder.getInt32(OverflowLimit), "cond");
 
-    llvm::Type *BaseTy =
-        llvm::PointerType::getUnqual(CGF.ConvertTypeForMem(Ty));
-    llvm::Value *Addr =
-        CGF.Builder.CreateVAArg(VAListAddr.getPointer(), BaseTy);
-    return Address(Addr, TyAlignForABI);
-  } else {
-    Address Temp = CGF.CreateMemTemp(Ty, "varet");
-    llvm::Value *Val =
-        CGF.Builder.CreateVAArg(VAListAddr.getPointer(), CGF.ConvertType(Ty));
-    CGF.Builder.CreateStore(Val, Temp);
-    return Temp;
+  llvm::BasicBlock *UsingRegSaveArea =
+      CGF.createBasicBlock("using_regsavearea");
+  llvm::BasicBlock *UsingOverflow = CGF.createBasicBlock("using_overflow");
+  llvm::BasicBlock *Cont = CGF.createBasicBlock("cont");
+
+  Builder.CreateCondBr(CC, UsingRegSaveArea, UsingOverflow);
+
+  llvm::Type *DirectTy = CGF.ConvertType(Ty);
+
+  // Case 1: consume registers.
+  Address RegAddr = Address::invalid();
+  {
+    CGF.EmitBlock(UsingRegSaveArea);
+
+    CharUnits RegSize = CharUnits::fromQuantity(4);
+    RegSaveArea =
+        Address(Builder.CreateInBoundsGEP(CGF.Int32Ty, RegSaveArea.getPointer(),
+                                          ARIndex),
+                RegSaveArea.getAlignment().alignmentOfArrayElement(RegSize));
+    RegAddr = Builder.CreateElementBitCast(RegSaveArea, DirectTy);
+    CGF.EmitBranch(Cont);
   }
+
+  // Case 2: consume space in the overflow area.
+  Address MemAddr = Address::invalid();
+  {
+    CGF.EmitBlock(UsingOverflow);
+    llvm::Value *CC1 = Builder.CreateICmpULE(
+        ARIndex, Builder.getInt32(OverflowLimit), "cond_overflow");
+
+    llvm::Value *ARIndexOff = Builder.CreateSelect(
+        CC1, Builder.CreateSub(Builder.getInt32(8), ARIndex),
+        Builder.getInt32(0));
+
+    llvm::Value *ARIndexCorr = Builder.CreateAdd(ARIndex, ARIndexOff);
+    llvm::Value *ARIndexNextCorr = Builder.CreateAdd(ARIndexNext, ARIndexOff);
+    Builder.CreateStore(Builder.CreateShl(ARIndexNextCorr, Builder.getInt32(2)),
+                        ARAreaPtr);
+
+    CharUnits RegSize = CharUnits::fromQuantity(4);
+    OverflowArea =
+        Address(Builder.CreateInBoundsGEP(
+                    CGF.Int32Ty, OverflowArea.getPointer(), ARIndexCorr),
+                OverflowArea.getAlignment().alignmentOfArrayElement(RegSize));
+    MemAddr = Builder.CreateElementBitCast(OverflowArea, DirectTy);
+    CGF.EmitBranch(Cont);
+  }
+
+  CGF.EmitBlock(Cont);
+
+  // Merge the cases with a phi.
+  Address Result =
+      emitMergePHI(CGF, RegAddr, UsingRegSaveArea, MemAddr, UsingOverflow, "");
+
+  return Result;
 }
 
 ABIArgInfo XtensaABIInfo::extendType(QualType Ty) const {

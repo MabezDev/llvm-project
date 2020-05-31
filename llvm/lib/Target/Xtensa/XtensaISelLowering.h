@@ -199,7 +199,6 @@ private:
   SDValue lowerJumpTable(JumpTableSDNode *JT, SelectionDAG &DAG) const;
   SDValue lowerConstantPool(ConstantPoolSDNode *CP, SelectionDAG &DAG) const;
   SDValue lowerVASTART(SDValue Op, SelectionDAG &DAG) const;
-  SDValue lowerVAARG(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerVACOPY(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerSTACKSAVE(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerSTACKRESTORE(SDValue Op, SelectionDAG &DAG) const;

@@ -72,11 +72,50 @@ private:
   // Enable Xtensa Div32 option
   bool HasDiv32;
 
+  // Enable Xtensa Xtensa Double Precision FP acceleration
+  bool HasDFPAccel;
+
   // Enable Xtensa S32C1I option
   bool HasS32C1I;
 
   // Enable Xtensa THREADPTR option
   bool HasTHREADPTR;
+
+  // Enable Xtensa Extended L32R option
+  bool HasExtendedL32R;
+
+  // Enable Xtensa ATOMCTL option
+  bool HasATOMCTL;
+
+  // Enable Xtensa ATOMCTL option
+  bool HasMEMCTL;
+
+  // Enable Xtensa Debug option
+  bool HasDebug;
+
+  // Enable Xtensa Exceptions option
+  bool HasException;
+
+  // Enable Xtensa High Priority Interrupt option
+  bool HasHighPriInterrupts;
+
+  // Enable Xtensa Coprocessor option
+  bool HasCoprocessor;
+
+  // Enable Xtensa Interrupt option
+  bool HasInterrupt;
+
+  // Enable Xtensa Relocatable Vector option
+  bool HasRelocatableVector;
+
+  // Enable Xtensa Timer Interrupt option
+  bool HasTimerInt;
+
+  // Enable Xtensa Processor ID option
+  bool HasPRID;
+
+  // Enable Xtensa Miscellaneous Special Reigsiters option
+  bool HasMiscSR;
 
   XtensaSubtarget &initializeSubtargetDependencies(StringRef CPU, StringRef FS);
 
@@ -117,9 +156,35 @@ public:
 
   bool hasDiv32() const { return HasDiv32; };
 
+  bool hasDFPAccel() const { return HasDFPAccel; };
+
   bool hasS32C1I() const { return HasS32C1I; };
 
   bool hasTHREADPTR() const { return HasTHREADPTR; };
+
+  bool hasExtendedL32R() const { return HasExtendedL32R; }
+
+  bool hasATOMCTL() const { return HasATOMCTL; }
+
+  bool hasMEMCTL() const { return HasMEMCTL; }
+
+  bool hasDebug() const { return HasDebug; }
+
+  bool hasException() const { return HasException; }
+
+  bool hasHighPriInterrupts() const { return HasHighPriInterrupts; }
+
+  bool hasCoprocessor() const { return HasCoprocessor; }
+
+  bool hasInterrupt() const { return HasInterrupt; }
+
+  bool hasRelocatableVector() const { return HasRelocatableVector; }
+
+  bool hasTimerInt() const { return HasTimerInt; }
+
+  bool hasPRID() const { return HasPRID; }
+
+  bool hasMiscSR() const { return HasMiscSR; }
 
   bool useSmallSection() const { return UseSmallSection; }
 

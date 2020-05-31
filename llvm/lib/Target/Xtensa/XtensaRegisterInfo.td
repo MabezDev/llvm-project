@@ -72,7 +72,6 @@ class SRReg<bits<8> num, string n, list<string> alt = []> : XtensaReg<n> {
   let AltNames = alt;
 }
 
-
 def LBEG : SRReg<0, "lbeg", ["LBEG", "0"]>;
 def LEND : SRReg<1, "lend", ["LEND", "1"]>;
 def LCOUNT : SRReg<2, "lcount", ["LCOUNT", "2"]>;
@@ -165,6 +164,8 @@ def CPENABLE : SRReg<224, "cpenable", ["CPENABLE", "224"]>;
 // Interrupt enable mask register
 def INTSET : SRReg<226, "interrupt", ["INTERRUPT", "226"]>;
 
+def INTCLEAR : SRReg<227, "intclear", ["INTCLEAR", "227"]>;
+
 def INTENABLE : SRReg<228, "intenable", ["INTENABLE", "228"]>;
 
 // Processor State
@@ -207,22 +208,32 @@ def SR :  RegisterClass<"Xtensa", [i32], 32, (add
   WINDOWBASE, WINDOWSTART, IBREAKENABLE, MEMCTL, ATOMCTL, DDR, IBREAKA0, IBREAKA1,
   DBREAKA0, DBREAKA1, DBREAKC0, DBREAKC1, CONFIGID0, EPC1, EPC2, EPC3, EPC4, EPC5, 
   EPC6, EPC7, DEPC, EPS2, EPS3, EPS4, EPS5, EPS6, EPS7, CONFIGID1, EXCSAVE1, EXCSAVE2,
-  EXCSAVE3, EXCSAVE4, EXCSAVE5, EXCSAVE6, EXCSAVE7, CPENABLE, INTSET, INTENABLE, PS,
+  EXCSAVE3, EXCSAVE4, EXCSAVE5, EXCSAVE6, EXCSAVE7, CPENABLE, INTSET, INTCLEAR, INTENABLE, PS,
   VECBASE, EXCCAUSE, DEBUGCAUSE, CCOUNT, PRID, ICOUNT, ICOUNTLEVEL, EXCVADDR, CCOMPARE0, 
   CCOMPARE1, CCOMPARE2, MISC0, MISC1, MISC2, MISC3)>;
 
 //===----------------------------------------------------------------------===//
 // USER registers
 //===----------------------------------------------------------------------===//
-class URReg<bits<16> num, string n, list<string> alt = []> : XtensaReg<n> {
-  let HWEncoding{15-0} = num;
+class URReg<bits<8> num, string n, list<string> alt = []> : XtensaReg<n> {
+  let HWEncoding{7-0} = num;
   let AltNames = alt;
 }
+
+def GPIO_OUT : URReg<0, "gpio_out", ["GPIO_OUT"]>;
+def EXPSTATE : URReg<230, "expstate", ["EXPSTATE"]>;
 
 // Thread Pointer register
 def THREADPTR : URReg<231, "threadptr", ["THREADPTR"]>;  
 
-def UR :  RegisterClass<"Xtensa", [i32], 32, (add THREADPTR)>; 
+def FCR : URReg<232, "fcr", ["FCR"]>;
+def FSR : URReg<233, "fsr", ["FSR"]>;
+def F64R_LO : URReg<234, "f64r_lo", ["F64R_LO"]>;
+def F64R_HI : URReg<235, "f64r_hi", ["F64R_HI"]>;
+def F64S : URReg<236, "f64s", ["F64S"]>;
+
+def UR :  RegisterClass<"Xtensa", [i32], 32, (add GPIO_OUT, EXPSTATE, THREADPTR, FCR,
+  FSR, F64R_LO, F64R_HI, F64S)>;
 
 //===----------------------------------------------------------------------===//
 // Floating-Point registers

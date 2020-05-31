@@ -32,7 +32,9 @@ def RetCC_Xtensa: CallingConv<[
 //===----------------------------------------------------------------------===//
 
 def CSR_Xtensa: CalleeSavedRegs<(add A0, A12, A13, A14, A15)>;
-
+def CSRWE_Xtensa : CalleeSavedRegs<(add)> {
+  let OtherPreserved = (add A0, SP, A2, A3, A4, A5, A6, A7);
+}
 //===----------------------------------------------------------------------===//
 
 def RetCCW_Xtensa: CallingConv<[
@@ -44,4 +46,3 @@ def RetCCW_Xtensa: CallingConv<[
   CCIfType<[f32], CCAssignToReg<[A10, A11, A12, A13]>>,
   CCIfType<[i64], CCAssignToRegWithShadow<[A10, A12], [A11, A13]>>
 ]>;
-
