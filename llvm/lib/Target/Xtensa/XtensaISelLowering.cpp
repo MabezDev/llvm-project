@@ -437,11 +437,11 @@ XtensaTargetLowering::XtensaTargetLowering(const TargetMachine &tm,
     }
   }
 
+  setMaxAtomicSizeInBitsSupported(32);
   if (Subtarget.hasS32C1I()) {
-    setMaxAtomicSizeInBitsSupported(32);
     setMinCmpXchgSizeInBits(32);
   } else {
-    setMaxAtomicSizeInBitsSupported(0);
+    setMinCmpXchgSizeInBits(0);
   }
 
   for (MVT VT : MVT::fixedlen_vector_valuetypes()) {
