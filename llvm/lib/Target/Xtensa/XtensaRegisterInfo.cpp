@@ -75,9 +75,67 @@ BitVector XtensaRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   return Reserved;
 }
 
+static bool isValidAddrOffset(MachineInstr &MI, int64_t Offset) {
+  switch (MI.getOpcode()) {
+  case Xtensa::L8I_P:
+  case Xtensa::L8UI:
+  case Xtensa::S8I:
+  case Xtensa::SPILL_BOOL:
+  case Xtensa::RESTORE_BOOL:
+    return (Offset >= 0 && Offset <= 255);
+  case Xtensa::L16SI:
+  case Xtensa::L16UI:
+  case Xtensa::S16I:
+    return (Offset >= 0 && Offset <= 510) && ((Offset & 0x1) == 0);
+  case Xtensa::LEA_ADD:
+    return (Offset >= -128 && Offset <= 127);
+  case Xtensa::AE_L64_I:
+  case Xtensa::AE_S64_I:
+  case Xtensa::AE_S32X2_I:
+  case Xtensa::AE_L32X2_I:
+  case Xtensa::AE_S16X4_I:
+  case Xtensa::AE_L16X4_I:
+  case Xtensa::AE_LALIGN64_I:
+  case Xtensa::AE_SALIGN64_I:
+    return (Offset >= -64 && Offset <= 56);
+  case Xtensa::AE_S64_IP:
+  case Xtensa::AE_L64_IP:
+  case Xtensa::AE_S32X2_IP:
+  case Xtensa::AE_L32X2_IP:
+  case Xtensa::AE_S16X4_IP:
+  case Xtensa::AE_L16X4_IP:
+    return (Offset >= 0 && Offset <= 56);
+  case Xtensa::AE_L16X2M_I:
+  case Xtensa::AE_L16X2M_IU:
+  case Xtensa::AE_L32F24_I:
+  case Xtensa::AE_L32F24_IP:
+  case Xtensa::AE_L32M_I:
+  case Xtensa::AE_L32M_IU:
+  case Xtensa::AE_L32_I:
+  case Xtensa::AE_L32_IP:
+  case Xtensa::AE_S16X2M_I:
+  case Xtensa::AE_S16X2M_IU:
+  case Xtensa::AE_S24RA64S_I:
+  case Xtensa::AE_S24RA64S_IP:
+  case Xtensa::AE_S32F24_L_I:
+  case Xtensa::AE_S32F24_L_IP:
+  case Xtensa::AE_S32M_I:
+  case Xtensa::AE_S32M_IU:
+  case Xtensa::AE_S32RA64S_I:
+  case Xtensa::AE_S32RA64S_IP:
+  case Xtensa::AE_S32_L_I:
+  case Xtensa::AE_S32_L_IP:
+    return (Offset >= -32 && Offset <= 28);
+  default:
+    // assume that MI is 32-bit load/store operation
+    return (Offset >= 0 && Offset <= 1020) && ((Offset & 0x3) == 0);
+  }
+}
+
 bool XtensaRegisterInfo::eliminateFI(MachineBasicBlock::iterator II,
                                      unsigned OpNo, int FrameIndex,
                                      uint64_t StackSize, int64_t SPOffset,
+                                     uint64_t Alignment,
                                      RegScavenger *RS) const {
   MachineInstr &MI = *II;
   MachineFunction &MF = *MI.getParent()->getParent();
@@ -126,68 +184,8 @@ bool XtensaRegisterInfo::eliminateFI(MachineBasicBlock::iterator II,
   LLVM_DEBUG(errs() << "Offset     : " << Offset << "\n"
                     << "<--------->\n");
 
-  bool Valid = false;
-  switch (MI.getOpcode()) {
-  case Xtensa::L8I_P:
-  case Xtensa::L8UI:
-  case Xtensa::S8I:
-  case Xtensa::SPILL_BOOL:
-  case Xtensa::RESTORE_BOOL:
-    Valid = (Offset >= 0 && Offset <= 255);
-    break;
-  case Xtensa::L16SI:
-  case Xtensa::L16UI:
-  case Xtensa::S16I:
-    Valid = (Offset >= 0 && Offset <= 510) && ((Offset & 0x1) == 0);
-    break;
-  case Xtensa::LEA_ADD:
-    Valid = (Offset >= -128 && Offset <= 127);
-    break;
-  case Xtensa::AE_L64_I:
-  case Xtensa::AE_S64_I:
-  case Xtensa::AE_S32X2_I:
-  case Xtensa::AE_L32X2_I:
-  case Xtensa::AE_S16X4_I:
-  case Xtensa::AE_L16X4_I:
-  case Xtensa::AE_LALIGN64_I:
-  case Xtensa::AE_SALIGN64_I:
-    Valid = (Offset >= -64 && Offset <= 56);
-    break;
-  case Xtensa::AE_S64_IP:
-  case Xtensa::AE_L64_IP:
-  case Xtensa::AE_S32X2_IP:
-  case Xtensa::AE_L32X2_IP:
-  case Xtensa::AE_S16X4_IP:
-  case Xtensa::AE_L16X4_IP:
-    Valid = (Offset >= 0 && Offset <= 56);
-    break;
-  case Xtensa::AE_L16X2M_I:
-  case Xtensa::AE_L16X2M_IU:
-  case Xtensa::AE_L32F24_I:
-  case Xtensa::AE_L32F24_IP:
-  case Xtensa::AE_L32M_I:
-  case Xtensa::AE_L32M_IU:
-  case Xtensa::AE_L32_I:
-  case Xtensa::AE_L32_IP:
-  case Xtensa::AE_S16X2M_I:
-  case Xtensa::AE_S16X2M_IU:
-  case Xtensa::AE_S24RA64S_I:
-  case Xtensa::AE_S24RA64S_IP:
-  case Xtensa::AE_S32F24_L_I:
-  case Xtensa::AE_S32F24_L_IP:
-  case Xtensa::AE_S32M_I:
-  case Xtensa::AE_S32M_IU:
-  case Xtensa::AE_S32RA64S_I:
-  case Xtensa::AE_S32RA64S_IP:
-  case Xtensa::AE_S32_L_I:
-  case Xtensa::AE_S32_L_IP:
-    Valid = (Offset >= -32 && Offset <= 28);
-    break;
-  default:
-    // assume that MI is 32-bit load/store operation
-    Valid = (Offset >= 0 && Offset <= 1020) && ((Offset & 0x3) == 0);
-    break;
-  }
+  bool Valid = (Alignment <= 32) ? isValidAddrOffset(MI, Offset) : false;
+  
 
   // If MI is not a debug value, make sure Offset fits in the 16-bit immediate
   // field.
@@ -195,11 +193,31 @@ bool XtensaRegisterInfo::eliminateFI(MachineBasicBlock::iterator II,
     MachineBasicBlock &MBB = *MI.getParent();
     DebugLoc DL = II->getDebugLoc();
     unsigned ADD = Xtensa::ADD;
-    unsigned Reg;
+    unsigned Reg, RegMisAlign;
     const XtensaInstrInfo &TII = *static_cast<const XtensaInstrInfo *>(
         MBB.getParent()->getSubtarget().getInstrInfo());
 
-    TII.loadImmediate(MBB, II, &Reg, Offset);
+    // Calculate how much is needed to have the correct alignment.
+    // Change offset to: alignment + difference.
+    // For example, in case of alignment of 128:
+    // diff_to_128_aligned_address = (128 - (SP & 127))
+    // new_offset = 128 + diff_to_128_aligned_address
+    if (Alignment > 32) {
+      TII.loadImmediate(MBB, II, &RegMisAlign, Alignment - 1);
+      TII.loadImmediate(MBB, II, &Reg, Alignment);
+      BuildMI(MBB, II, DL, TII.get(Xtensa::AND))
+          .addReg(RegMisAlign, RegState::Define)
+          .addReg(FrameReg)
+          .addReg(RegMisAlign);
+      BuildMI(MBB, II, DL, TII.get(Xtensa::SUB), RegMisAlign)
+          .addReg(Reg)
+          .addReg(RegMisAlign);
+      BuildMI(MBB, II, DL, TII.get(Xtensa::ADD), Reg)
+          .addReg(Reg)
+          .addReg(RegMisAlign, RegState::Kill);
+    } else {
+      TII.loadImmediate(MBB, II, &Reg, Offset);
+    }
     BuildMI(MBB, II, DL, TII.get(ADD), Reg)
         .addReg(FrameReg)
         .addReg(Reg, RegState::Kill);
@@ -309,12 +327,14 @@ bool XtensaRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   int FrameIndex = MI.getOperand(FIOperandNum).getIndex();
   uint64_t stackSize = MF.getFrameInfo().getStackSize();
   int64_t spOffset = MF.getFrameInfo().getObjectOffset(FrameIndex);
+  uint64_t Alignment = MF.getFrameInfo().getObjectAlign(FrameIndex).value();
 
   LLVM_DEBUG(errs() << "FrameIndex : " << FrameIndex << "\n"
                     << "spOffset   : " << spOffset << "\n"
                     << "stackSize  : " << stackSize << "\n");
 
-  return eliminateFI(MI, FIOperandNum, FrameIndex, stackSize, spOffset, RS);
+  return eliminateFI(MI, FIOperandNum, FrameIndex, stackSize, spOffset,
+                     Alignment, RS);
 }
 
 Register XtensaRegisterInfo::getFrameRegister(const MachineFunction &MF) const {
