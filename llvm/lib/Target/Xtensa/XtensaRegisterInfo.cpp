@@ -135,7 +135,6 @@ static bool isValidAddrOffset(MachineInstr &MI, int64_t Offset) {
 bool XtensaRegisterInfo::eliminateFI(MachineBasicBlock::iterator II,
                                      unsigned OpNo, int FrameIndex,
                                      uint64_t StackSize, int64_t SPOffset,
-                                     uint64_t Alignment,
                                      RegScavenger *RS) const {
   MachineInstr &MI = *II;
   MachineFunction &MF = *MI.getParent()->getParent();
@@ -184,9 +183,8 @@ bool XtensaRegisterInfo::eliminateFI(MachineBasicBlock::iterator II,
   LLVM_DEBUG(errs() << "Offset     : " << Offset << "\n"
                     << "<--------->\n");
 
-  bool Valid = (Alignment <= 32) ? isValidAddrOffset(MI, Offset) : false;
+  bool Valid = isValidAddrOffset(MI, Offset);
   
-
   // If MI is not a debug value, make sure Offset fits in the 16-bit immediate
   // field.
   if (!MI.isDebugValue() && !Valid) {
@@ -197,27 +195,7 @@ bool XtensaRegisterInfo::eliminateFI(MachineBasicBlock::iterator II,
     const XtensaInstrInfo &TII = *static_cast<const XtensaInstrInfo *>(
         MBB.getParent()->getSubtarget().getInstrInfo());
 
-    // Calculate how much is needed to have the correct alignment.
-    // Change offset to: alignment + difference.
-    // For example, in case of alignment of 128:
-    // diff_to_128_aligned_address = (128 - (SP & 127))
-    // new_offset = 128 + diff_to_128_aligned_address
-    if (Alignment > 32) {
-      TII.loadImmediate(MBB, II, &RegMisAlign, Alignment - 1);
-      TII.loadImmediate(MBB, II, &Reg, Alignment);
-      BuildMI(MBB, II, DL, TII.get(Xtensa::AND))
-          .addReg(RegMisAlign, RegState::Define)
-          .addReg(FrameReg)
-          .addReg(RegMisAlign);
-      BuildMI(MBB, II, DL, TII.get(Xtensa::SUB), RegMisAlign)
-          .addReg(Reg)
-          .addReg(RegMisAlign);
-      BuildMI(MBB, II, DL, TII.get(Xtensa::ADD), Reg)
-          .addReg(Reg)
-          .addReg(RegMisAlign, RegState::Kill);
-    } else {
-      TII.loadImmediate(MBB, II, &Reg, Offset);
-    }
+    TII.loadImmediate(MBB, II, &Reg, Offset);
     BuildMI(MBB, II, DL, TII.get(ADD), Reg)
         .addReg(FrameReg)
         .addReg(Reg, RegState::Kill);
@@ -327,14 +305,12 @@ bool XtensaRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   int FrameIndex = MI.getOperand(FIOperandNum).getIndex();
   uint64_t stackSize = MF.getFrameInfo().getStackSize();
   int64_t spOffset = MF.getFrameInfo().getObjectOffset(FrameIndex);
-  uint64_t Alignment = MF.getFrameInfo().getObjectAlign(FrameIndex).value();
 
   LLVM_DEBUG(errs() << "FrameIndex : " << FrameIndex << "\n"
                     << "spOffset   : " << spOffset << "\n"
                     << "stackSize  : " << stackSize << "\n");
 
-  return eliminateFI(MI, FIOperandNum, FrameIndex, stackSize, spOffset,
-                     Alignment, RS);
+  return eliminateFI(MI, FIOperandNum, FrameIndex, stackSize, spOffset, RS);
 }
 
 Register XtensaRegisterInfo::getFrameRegister(const MachineFunction &MF) const {

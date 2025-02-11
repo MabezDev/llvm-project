@@ -57,7 +57,7 @@ public:
 private:
   bool eliminateFI(MachineBasicBlock::iterator II, unsigned OpNo,
                    int FrameIndex, uint64_t StackSize, int64_t SPOffset,
-                   uint64_t Alignment, RegScavenger *RS) const;
+                   RegScavenger *RS) const;
 
   bool requiresFrameIndexReplacementScavenging(const MachineFunction &MF) const override;
 };

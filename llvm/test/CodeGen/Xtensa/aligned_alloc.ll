@@ -4,25 +4,20 @@
 
 define i8 @loadi8_128(i8 %a) {
 ; XTENSA-LABEL: loadi8_128:
-; XTENSA:         entry a1, 288
-; XTENSA-NEXT:    movi a9, 127
+; XTENSA:         entry a1, 416
+; XTENSA-NEXT:    movi a8, 127
+; XTENSA-NEXT:    movi a9, 128
+; XTENSA-NEXT:    and a8, a1, a8
+; XTENSA-NEXT:    sub a8, a9, a8
+; XTENSA-NEXT:    add.n a1, a1, a8
 ; XTENSA-NEXT:    movi a8, 128
-; XTENSA-NEXT:    and a9, a1, a9
-; XTENSA-NEXT:    sub a9, a8, a9
-; XTENSA-NEXT:    add.n a8, a8, a9
 ; XTENSA-NEXT:    add.n a8, a1, a8
 ; XTENSA-NEXT:    addi a10, a8, 0
 ; XTENSA-NEXT:    movi.n a11, 0
 ; XTENSA-NEXT:    movi.n a12, 64
 ; XTENSA-NEXT:    l32r a8, .LCPI0_0
 ; XTENSA-NEXT:    callx8 a8
-; XTENSA-NEXT:    movi a9, 127
-; XTENSA-NEXT:    movi a8, 128
-; XTENSA-NEXT:    and a9, a1, a9
-; XTENSA-NEXT:    sub a9, a8, a9
-; XTENSA-NEXT:    add.n a8, a8, a9
-; XTENSA-NEXT:    add.n a8, a1, a8
-; XTENSA-NEXT:    l8ui a2, a8, 0
+; XTENSA-NEXT:    l8ui a2, a1, 128
 ; XTENSA-NEXT:    retw.n
     %aligned = alloca i8, align 128
     call void @llvm.memset.p0.i64(ptr noundef nonnull align 64 dereferenceable(64) %aligned, i8 0, i64 64, i1 false)
