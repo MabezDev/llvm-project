@@ -806,7 +806,7 @@ void RISCVInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
 
     // Super-register already contains this sub-register (e.g. COPY $q0,
     // $q0_d0).
-    if (TRI->getSubReg(DstReg, *SubIdx) == MCRegister(SrcReg))
+    if (TRI->getSubReg(DstReg, *SubIdx) == SrcReg.asMCReg())
       return;
 
     BuildMI(MBB, MBBI, DL, get(TargetOpcode::INSERT_SUBREG), DstReg)
