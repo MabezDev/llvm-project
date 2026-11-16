@@ -1,0 +1,58 @@
+# REQUIRES: xtensa
+## The GNU Xtensa assembler emits R_XTENSA_ASM_EXPAND and the DIFF/PDIFF/NDIFF
+## relocations as linker relaxation markers. Without relaxation they must leave
+## the section contents untouched.
+
+# RUN: yaml2obj %s -o %t.o
+# RUN: ld.lld %t.o -o %t
+# RUN: llvm-objdump -s -j .text -j .rodata %t | FileCheck %s
+
+# CHECK:      Contents of section .rodata:
+# CHECK-NEXT: aabbccdd aabbccdd aabbccdd
+# CHECK:      Contents of section .text:
+# CHECK-NEXT: 11223344 55667788
+
+--- !ELF
+FileHeader:
+  Class:   ELFCLASS32
+  Data:    ELFDATA2LSB
+  Type:    ET_REL
+  Machine: EM_XTENSA
+Sections:
+  - Name:         .text
+    Type:         SHT_PROGBITS
+    Flags:        [ SHF_ALLOC, SHF_EXECINSTR ]
+    AddressAlign: 4
+    Content:      '1122334455667788'
+  - Name:         .rodata
+    Type:         SHT_PROGBITS
+    Flags:        [ SHF_ALLOC ]
+    AddressAlign: 4
+    Content:      'AABBCCDDAABBCCDDAABBCCDD'
+  - Name:         .rela.text
+    Type:         SHT_RELA
+    Info:         .text
+    Relocations:
+      - Offset: 0x0
+        Symbol: _start
+        Type:   R_XTENSA_ASM_EXPAND
+  - Name:         .rela.rodata
+    Type:         SHT_RELA
+    Info:         .rodata
+    Relocations:
+      - Offset: 0x0
+        Symbol: _start
+        Type:   R_XTENSA_DIFF32
+        Addend: 4
+      - Offset: 0x4
+        Symbol: _start
+        Type:   R_XTENSA_PDIFF32
+        Addend: 4
+      - Offset: 0x8
+        Symbol: _start
+        Type:   R_XTENSA_NDIFF32
+        Addend: 4
+Symbols:
+  - Name:    _start
+    Section: .text
+    Binding: STB_GLOBAL

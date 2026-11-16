@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "InputFiles.h"
+#include "RelocScan.h"
 #include "Symbols.h"
 #include "Target.h"
 #include <bitset>
@@ -28,6 +29,12 @@ public:
   Xtensa(Ctx &ctx);
   RelExpr getRelExpr(RelType type, const Symbol &s,
                      const uint8_t *loc) const override;
+  template <class ELFT, class RelTy>
+  void scanSectionImpl(InputSectionBase &sec, Relocs<RelTy> rels,
+                       unsigned shard);
+  void scanSection(InputSectionBase &sec, unsigned shard) override {
+    elf::scanSection1<Xtensa, ELF32LE>(*this, sec, shard);
+  }
   void relocate(uint8_t *loc, const Relocation &rel,
                 uint64_t val) const override;
 };
@@ -92,6 +99,30 @@ RelExpr Xtensa::getRelExpr(RelType type, const Symbol &s,
     Err(ctx) << getErrorLoc(ctx, loc) << "unknown relocation (" << type.v
              << ") against symbol " << &s;
     return R_NONE;
+  }
+}
+
+template <class ELFT, class RelTy>
+void Xtensa::scanSectionImpl(InputSectionBase &sec, Relocs<RelTy> rels,
+                             unsigned shard) {
+  RelocScan rs(ctx, &sec, shard);
+  sec.relocations.reserve(rels.size());
+  for (auto it = rels.begin(); it != rels.end(); ++it) {
+    const RelTy &rel = *it;
+    uint32_t symIdx = rel.getSymbol(false);
+    Symbol &sym = sec.getFile<ELFT>()->getSymbol(symIdx);
+    uint64_t offset = rel.r_offset;
+    RelType type = rel.getType(false);
+    RelExpr expr = getRelExpr(type, sym, sec.content().data() + offset);
+    // The generic RelocScan::scan no longer drops R_NONE, and
+    // getRelocTargetVA has no R_NONE case, so the relaxation markers that
+    // getRelExpr maps to R_NONE must be skipped here.
+    if (expr == R_NONE)
+      continue;
+    if (sym.isUndefined() && symIdx != 0 &&
+        rs.maybeReportUndefined(cast<Undefined>(sym), offset))
+      continue;
+    rs.process(expr, type, offset, sym, rs.getAddend<ELFT>(rel, type));
   }
 }
 
