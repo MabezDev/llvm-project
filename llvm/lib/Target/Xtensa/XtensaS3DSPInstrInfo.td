@@ -1029,7 +1029,8 @@ def EE_LD_UA_STATE_IP_P : Pseudo<(outs), (ins AR:$as, offset_256_16:$imm16),
 			[(int_xtensa_ee_ld_ua_state_ip AR:$as, timm:$imm16)]>;
 
 def EE_MOVI_32_A:  EE_Inst24<(outs AR:$au), (ins QR:$qs, select_4:$sel4),
-                   "ee.movi.32.a\t $qs, $au, $sel4", []>, Requires<[HasESP32S3Ops]>
+                   "ee.movi.32.a\t $qs, $au, $sel4", []>,
+                   Requires<[HasESP32S3Ops]>
 {
   bits<3> qs;
   bits<4> au;
@@ -1047,14 +1048,20 @@ def EE_MOVI_32_A:  EE_Inst24<(outs AR:$au), (ins QR:$qs, select_4:$sel4),
   let Inst{3-0} = 0x4;
 }
 
+def : Pat<(Xtensa_extract_qr_word (v16i8 QR:$qs), (i32 imm:$sel4)),
+          (EE_MOVI_32_A QR:$qs, imm:$sel4)>;
+def : Pat<(i32 (extractelt (v4i32 QR:$qs), (i32 imm:$sel4))),
+          (EE_MOVI_32_A QR:$qs, imm:$sel4)>;
+
 let usesCustomInserter = 1 in
 def EE_MOVI_32_A_P : Pseudo<(outs), (ins imm8:$qs, AR:$au, select_4:$sel4),
 				"!xtensa_ee_movi_32_a_p, $qs, $au, $sel4",
 			[(int_xtensa_ee_movi_32_a timm:$qs, AR:$au, timm:$sel4)]>;
 
-def EE_MOVI_32_Q:  EE_Inst24<(outs QR:$qu), (ins AR:$as, select_4:$sel4),
+def EE_MOVI_32_Q:  EE_Inst24<(outs QR:$qu), (ins QR:$qprev, AR:$as, select_4:$sel4),
                    "ee.movi.32.q\t $qu, $as, $sel4", []>, Requires<[HasESP32S3Ops]>
 {
+  let Constraints = "$qu = $qprev";
   bits<3> qu;
   bits<4> as;
   bits<2> sel4;
@@ -2606,6 +2613,13 @@ let usesCustomInserter = 1 in
 def EE_VLD_128_IP_P : Pseudo<(outs), (ins imm8:$qu, AR:$as, offset_256_16:$imm16),
 				"!xtensa_ee_vld_128_ip_p, $qu, $as, $imm16",
 			[(int_xtensa_ee_vld_128_ip timm:$qu, AR:$as, timm:$imm16)]>;
+
+let usesCustomInserter = 1, mayLoad = 1 in {
+  def EE_VLD_QR_P : Pseudo<(outs QR:$qu), (ins AR:$as), "", []>,
+                        Requires<[HasESP32S3Ops]>;
+}
+def : Pat<(v16i8 (load i32:$as)), (EE_VLD_QR_P i32:$as)>;
+def : Pat<(v4i32 (load i32:$as)), (EE_VLD_QR_P i32:$as)>;
 
 def EE_VLD_128_XP:  EE_Inst24<(outs QR:$qu, AR:$asr), (ins AR:$as, AR:$ad),
                    "ee.vld.128.xp\t $qu, $as, $ad", []>, Requires<[HasESP32S3Ops]>
@@ -5744,6 +5758,13 @@ let usesCustomInserter = 1 in
 def EE_VST_128_IP_P : Pseudo<(outs), (ins imm8:$qv, AR:$as, offset_256_16:$imm16),
 				"!xtensa_ee_vst_128_ip_p, $qv, $as, $imm16",
 			[(int_xtensa_ee_vst_128_ip timm:$qv, AR:$as, timm:$imm16)]>;
+
+let usesCustomInserter = 1, mayStore = 1 in {
+  def EE_VST_QR_P : Pseudo<(outs), (ins QR:$qv, AR:$as), "", []>,
+                        Requires<[HasESP32S3Ops]>;
+}
+def : Pat<(store v16i8:$qv, i32:$as), (EE_VST_QR_P QR:$qv, i32:$as)>;
+def : Pat<(store v4i32:$qv, i32:$as), (EE_VST_QR_P QR:$qv, i32:$as)>;
 
 def EE_VST_128_XP:  EE_Inst24<(outs AR:$asr), (ins QR:$qv, AR:$as, AR:$ad),
                    "ee.vst.128.xp\t $qv, $as, $ad", []>, Requires<[HasESP32S3Ops]>

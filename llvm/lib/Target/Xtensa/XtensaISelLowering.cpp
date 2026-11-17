@@ -64,6 +64,18 @@ XtensaTargetLowering::XtensaTargetLowering(const TargetMachine &TM,
     addRegisterClass(MVT::f32, &Xtensa::FPRRegClass);
   }
 
+  if (Subtarget.hasESP32S3Ops()) {
+    addRegisterClass(MVT::v16i8, &Xtensa::QRRegClass);
+    addRegisterClass(MVT::v4i32, &Xtensa::QRRegClass);
+    // QR values have no general BUILD_VECTOR instruction. Let the generic
+    // legalizer materialize constants through the constant pool, and expand
+    // non-constant vectors into scalar/vector operations it can select.
+    setOperationAction(ISD::BUILD_VECTOR, MVT::v16i8, Expand);
+    setOperationAction(ISD::BUILD_VECTOR, MVT::v4i32, Expand);
+    setOperationAction(ISD::EXTRACT_VECTOR_ELT, MVT::v16i8, Custom);
+    setOperationAction(ISD::EXTRACT_VECTOR_ELT, MVT::v4i32, Custom);
+  }
+
   if (Subtarget.hasBoolean()) {
     addRegisterClass(MVT::v1i1, &Xtensa::BRRegClass);
   }
@@ -386,6 +398,7 @@ XtensaTargetLowering::getConstraintType(StringRef Constraint) const {
     case 'a':
     case 'd':
     case 'f':
+    case 'q':
     case 'r':
       return C_RegisterClass;
     default:
@@ -422,6 +435,10 @@ XtensaTargetLowering::getSingleConstraintMatchWeight(
     if (Ty->isFloatingPointTy())
       Weight = CW_Register;
     break;
+  case 'q':
+    if (Ty->isVectorTy())
+      Weight = CW_Register;
+    break;
   }
   return Weight;
 }
@@ -441,6 +458,12 @@ XtensaTargetLowering::getRegForInlineAsmConstraint(
     case 'f': // Floating-point register
       if (Subtarget.hasSingleFloat())
         return std::make_pair(0U, &Xtensa::FPRRegClass);
+      break;
+    case 'q': // ESP32-S3 QR SIMD register
+      if (Subtarget.hasESP32S3Ops() &&
+          (VT == MVT::v16i8 || VT == MVT::v4i32))
+        return std::make_pair(0U, &Xtensa::QRRegClass);
+      break;
     }
   }
   return TargetLowering::getRegForInlineAsmConstraint(TRI, Constraint, VT);
@@ -1800,6 +1823,42 @@ SDValue XtensaTargetLowering::LowerOperation(SDValue Op,
     return LowerCTPOP(Op, DAG);
   case ISD::ConstantPool:
     return LowerConstantPool(Op, DAG);
+  case ISD::EXTRACT_VECTOR_ELT: {
+    SDValue Vec = Op.getOperand(0);
+    SDValue Index = Op.getOperand(1);
+    if (!Subtarget.hasESP32S3Ops())
+      return SDValue();
+
+    auto *IndexNode = dyn_cast<ConstantSDNode>(Index);
+    if (!IndexNode)
+      return SDValue();
+
+    uint64_t Lane = IndexNode->getZExtValue();
+    SDLoc DL(Op);
+    if (Vec.getValueType() == MVT::v4i32) {
+      if (Lane >= 4)
+        return SDValue();
+      // A QR register may enter the DAG as v16i8 and be viewed as v4i32
+      // for the scalar extraction. Select the underlying register directly.
+      if (Vec.getOpcode() == ISD::BITCAST &&
+          Vec.getOperand(0).getValueType() == MVT::v16i8)
+        Vec = Vec.getOperand(0);
+      if (Vec.getValueType() != MVT::v16i8)
+        return SDValue();
+      SDValue WordIndex = DAG.getConstant(Lane, DL, MVT::i32);
+      return DAG.getNode(XtensaISD::EXTRACT_QR_WORD, DL, MVT::i32,
+                         Vec, WordIndex);
+    }
+    if (Vec.getValueType() != MVT::v16i8 || Lane >= 16)
+      return SDValue();
+
+    SDValue WordIndex = DAG.getConstant(Lane / 4, DL, MVT::i32);
+    SDValue Word = DAG.getNode(XtensaISD::EXTRACT_QR_WORD, DL, MVT::i32,
+                               Vec, WordIndex);
+    SDValue Shift = DAG.getConstant((Lane % 4) * 8, DL, MVT::i32);
+    SDValue Width = DAG.getConstant(8, DL, MVT::i32);
+    return DAG.getNode(XtensaISD::EXTUI, DL, MVT::i32, Word, Shift, Width);
+  }
   case ISD::SELECT_CC:
     return LowerSELECT_CC(Op, DAG);
   case ISD::STACKSAVE:

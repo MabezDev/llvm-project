@@ -36,6 +36,8 @@ def SDT_XtensaSRC                 : SDTypeProfile<1, 3, [SDTCisVT<0, i32>, SDTCi
 
 def SDT_XtensaEXTUI               : SDTypeProfile<1, 3, [SDTCisVT<0, i32>, SDTCisVT<1, i32>,
                                                          SDTCisVT<2, i32>, SDTCisVT<3, i32>]>;
+def SDT_XtensaExtractQRWord       : SDTypeProfile<1, 2, [SDTCisVT<0, i32>, SDTCisVec<1>,
+                                                         SDTCisVT<2, i32>]>;
 
 def SDT_XtensaMOVSP               : SDTypeProfile<0, 1, [SDTCisVT<0, i32>]>;
 
@@ -79,6 +81,7 @@ def Xtensa_srcl: SDNode<"XtensaISD::SRCL", SDT_XtensaSRC>;
 def Xtensa_srcr: SDNode<"XtensaISD::SRCR", SDT_XtensaSRC>;
 
 def Xtensa_extui: SDNode<"XtensaISD::EXTUI", SDT_XtensaEXTUI>;
+def Xtensa_extract_qr_word: SDNode<"XtensaISD::EXTRACT_QR_WORD", SDT_XtensaExtractQRWord>;
 
 def Xtensa_movsp: SDNode<"XtensaISD::MOVSP", SDT_XtensaMOVSP,
                         [SDNPHasChain, SDNPSideEffect, SDNPInGlue]>;
